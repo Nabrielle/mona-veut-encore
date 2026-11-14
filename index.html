@@ -99,6 +99,45 @@ main {
   transition: opacity 0.3s ease;
 }
 
+
+.scene-container {
+  cursor: pointer;
+}
+.scene-container.sfx-bounce .scene-img {
+  animation: scene-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes scene-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.035) rotate(-0.8deg); }
+  75% { transform: scale(0.99) rotate(0.5deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.sfx-badge {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(6px);
+  color: #fde047;
+  border: 1.5px solid rgba(253, 224, 71, 0.6);
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  pointer-events: none;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+.scene-container:hover .sfx-badge {
+  transform: scale(1.06);
+  background: rgba(225, 29, 72, 0.92);
+  color: #fff;
+  border-color: #fff;
+}
+
 /* Story phrase & spoken speech */
 .phrase-bar {
   background: rgba(30, 41, 59, 0.85);
@@ -457,6 +496,155 @@ let soundEnabled = true;
 let modelingTimer = null;
 let readSessionId = 0;
 
+
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function playNoise(ctx, duration, filterFreq, type="bandpass", gainVal=0.25, delay=0) {
+  const bufSize = ctx.sampleRate * duration;
+  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filter = ctx.createBiquadFilter();
+  filter.type = type;
+  filter.frequency.setValueAtTime(filterFreq, ctx.currentTime + delay);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.001, ctx.currentTime + delay);
+  g.gain.linearRampToValueAtTime(gainVal, ctx.currentTime + delay + duration * 0.2);
+  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + duration);
+  src.connect(filter);
+  filter.connect(g);
+  g.connect(ctx.destination);
+  src.start(ctx.currentTime + delay);
+}
+
+function playTone(ctx, freq, endFreq, duration, type="sine", gainVal=0.2, delay=0) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+  if (endFreq !== freq) {
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), ctx.currentTime + delay + duration);
+  }
+  g.gain.setValueAtTime(0.001, ctx.currentTime + delay);
+  g.gain.linearRampToValueAtTime(gainVal, ctx.currentTime + delay + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + duration);
+  osc.connect(g);
+  g.connect(ctx.destination);
+  osc.start(ctx.currentTime + delay);
+  osc.stop(ctx.currentTime + delay + duration);
+}
+
+const SCENE_SFX_DATA = [
+  { label: "🛷 Glisse + Clochettes !", toast: "🛷 FFFOUIII ! Youpi !", voice: "Youpi !", fn: (ctx) => {
+      playNoise(ctx, 0.7, 900, "bandpass", 0.28, 0);
+      [1046, 1318, 1568, 2093].forEach((f, i) => playTone(ctx, f, f, 0.25, "triangle", 0.15, 0.1 + i * 0.1));
+    }
+  },
+  { label: "✨ Coucou Mona !", toast: "✨ Coucou, c'est moi Mona !", voice: "Coucou ! C'est moi, Mona !", fn: (ctx) => {
+      [523, 659, 784, 1046].forEach((f, i) => playTone(ctx, f, f, 0.22, "sine", 0.18, i * 0.09));
+    }
+  },
+  { label: "❄️ Pas dans la neige !", toast: "❄️ Crich, crach dans la neige !", voice: "Crich, crach ! Viens Papa, on va dehors !", fn: (ctx) => {
+      for (let i = 0; i < 4; i++) playNoise(ctx, 0.14, 1400, "bandpass", 0.3, i * 0.18);
+    }
+  },
+  { label: "🌬️ Vent d'hiver !", toast: "🌬️ Fffouuu… Quelle grande pente !", voice: "Wouah ! Regarde toute cette neige !", fn: (ctx) => {
+      playNoise(ctx, 0.85, 600, "lowpass", 0.3, 0);
+      playTone(ctx, 880, 1320, 0.4, "sine", 0.1, 0.2);
+    }
+  },
+  { label: "🛷💨 Wouhou ça glisse !", toast: "🛷💨 ZIIIIIP ! Wouhou !", voice: "Ziiiip ! Wouhou, ça glisse trop vite !", fn: (ctx) => {
+      playTone(ctx, 900, 280, 0.65, "sine", 0.22, 0);
+      playNoise(ctx, 0.65, 1100, "bandpass", 0.35, 0);
+    }
+  },
+  { label: "🌨️ Pouf dans la neige !", toast: "🌨️ POUF ! Encore Papa !", voice: "Pouf dans la neige douce ! Encore !", fn: (ctx) => {
+      playTone(ctx, 180, 55, 0.3, "sine", 0.35, 0);
+      playNoise(ctx, 0.35, 500, "lowpass", 0.35, 0.05);
+    }
+  },
+  { label: "🚀 Boing ! Ça saute !", toast: "🚀 BOING ! Youpi, ça vole !", voice: "Boing ! Youpiii, ça saute !", fn: (ctx) => {
+      playTone(ctx, 180, 780, 0.38, "triangle", 0.3, 0);
+      playTone(ctx, 780, 240, 0.3, "sine", 0.2, 0.38);
+      playNoise(ctx, 0.25, 800, "bandpass", 0.25, 0.55);
+    }
+  },
+  { label: "🏃‍♂️ Sam court !", toast: "🏃‍♂️ Tap, tap, tap ! Attends-moi !", voice: "Hé Mona ! Attends-moi !", fn: (ctx) => {
+      for (let i = 0; i < 5; i++) {
+        playTone(ctx, 160 + i * 15, 90, 0.09, "triangle", 0.25, i * 0.11);
+        playNoise(ctx, 0.08, 1500, "bandpass", 0.2, i * 0.11);
+      }
+    }
+  },
+  { label: "🔔 À ton tour Sam !", toast: "🔔 Ding-dong ! À toi Sam !", voice: "C'est fini pour moi ! À ton tour Sam !", fn: (ctx) => {
+      playTone(ctx, 659, 659, 0.22, "triangle", 0.22, 0);
+      playTone(ctx, 880, 880, 0.35, "triangle", 0.25, 0.2);
+    }
+  },
+  { label: "😱 Attention la luge !", toast: "😱 Ouh là là ! Attention le bonhomme !", voice: "Oh non ! Attention Papa, la luge arrive !", fn: (ctx) => {
+      playTone(ctx, 850, 220, 0.65, "sawtooth", 0.15, 0);
+      playNoise(ctx, 0.6, 1200, "bandpass", 0.3, 0);
+    }
+  },
+  { label: "⛄💥 BOUM ! Plouf !", toast: "⛄💥 BOUM ! PLOUF sur la tête de Papa !", voice: "Boum ! Plouf ! Hahaha, le bonhomme est sur la tête de Papa !", fn: (ctx) => {
+      playTone(ctx, 140, 35, 0.45, "sawtooth", 0.4, 0);
+      playNoise(ctx, 0.45, 450, "lowpass", 0.45, 0);
+      playTone(ctx, 420, 120, 0.35, "sine", 0.3, 0.35);
+      playNoise(ctx, 0.35, 900, "bandpass", 0.3, 0.38);
+    }
+  },
+  { label: "🥁 Surprise mystère !", toast: "🥁 Tadaaam ! Qu'est-ce que c'est ?", voice: "Tadaaam ! Oh, c'est quoi sous le torchon ?", fn: (ctx) => {
+      for (let i = 0; i < 6; i++) playNoise(ctx, 0.05, 800, "bandpass", 0.2, i * 0.06);
+      [523, 659, 784].forEach((f) => playTone(ctx, f, f, 0.4, "triangle", 0.16, 0.38));
+    }
+  },
+  { label: "☕ Miam le chocolat !", toast: "☕ Sluuurp… Miam miam !", voice: "Sluuurp ! Miam miam, il est trop bon le chocolat chaud !", fn: (ctx) => {
+      playTone(ctx, 300, 680, 0.3, "sine", 0.2, 0);
+      playTone(ctx, 523, 784, 0.25, "triangle", 0.2, 0.35);
+    }
+  },
+  { label: "⌚ Tic-tac, il est tard !", toast: "⌚ Tic-tac, tic-tac… Déjà ?", voice: "Tic, tac, tic, tac ! Oh non, reste encore Sam !", fn: (ctx) => {
+      [0, 0.22, 0.44, 0.66].forEach((d, i) => playTone(ctx, i % 2 === 0 ? 1100 : 800, i % 2 === 0 ? 1100 : 800, 0.05, "square", 0.15, d));
+    }
+  },
+  { label: "🎄🔔 Vive le vent !", toast: "🎄🔔 Joyeux Noël ! À demain !", voice: "Youpi ! À demain pour Noël !", fn: (ctx) => {
+      const notes = [[659,0],[659,0.18],[659,0.36],[659,0.6],[659,0.78],[659,0.96],[659,1.2],[784,1.38],[523,1.56],[587,1.74],[659,1.92]];
+      notes.forEach(([f, d]) => playTone(ctx, f, f, 0.16, "triangle", 0.2, d * 0.55));
+    }
+  }
+];
+
+function triggerSceneSfx() {
+  stopReading();
+  const mySession = readSessionId;
+  const sfx = SCENE_SFX_DATA[curIdx] || SCENE_SFX_DATA[0];
+  const sceneBox = document.getElementById("scene-box");
+  sceneBox.classList.remove("sfx-bounce");
+  void sceneBox.offsetWidth;
+  sceneBox.classList.add("sfx-bounce");
+  showToast(sfx.toast);
+  if (soundEnabled) {
+    const ctx = getAudioCtx();
+    if (ctx) sfx.fn(ctx);
+    modelingTimer = setTimeout(() => {
+      if (mySession !== readSessionId) return;
+      speakWord(sfx.voice);
+    }, 520);
+  }
+}
+
 function stopReading() {
   readSessionId++;
   if (modelingTimer) {
@@ -561,12 +749,18 @@ function renderPage(idx) {
 
   const sceneBox = document.getElementById("scene-box");
   sceneBox.innerHTML = "";
+  sceneBox.onclick = () => triggerSceneSfx();
   if (p.img) {
     const img = document.createElement("img");
     img.src = p.img;
     img.alt = p.narrative;
     img.className = "scene-img";
     sceneBox.appendChild(img);
+    const badge = document.createElement("div");
+    badge.className = "sfx-badge";
+    const sfx = SCENE_SFX_DATA[idx] || SCENE_SFX_DATA[0];
+    badge.innerText = sfx.label;
+    sceneBox.appendChild(badge);
   }
 
   PICTOS.forEach(x => {
